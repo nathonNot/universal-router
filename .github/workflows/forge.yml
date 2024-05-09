@@ -1,59 +1,54 @@
-name: Forge Tests
+name: Lint
 
 on:
   push:
     branches:
-      - main
+      - release
   pull_request:
 
-env:
-  FOUNDRY_PROFILE: ci
-
 jobs:
-  check:
-    strategy:
-      fail-fast: true
-
-    name: Foundry project
+  run-linters:
+    name: Run linters
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-        with:
-          submodules: recursive
 
-    # Must Insall node modules for forge to reference in remappings
-      - uses: actions/setup-node@v1
+    steps:
+      - name: Check out Git repository
+        uses: actions/checkout@v2
+
+      - name: Set up node
+        uses: actions/setup-node@v2
         with:
-          node-version: 16.x
+          node-version: 16
           registry-url: https://registry.npmjs.org
 
-      - id: yarn-cache
-        run: echo "::set-output name=dir::$(yarn cache dir)"
-
-      - uses: actions/cache@v1
-        with:
-          path: ${{ steps.yarn-cache.outputs.dir }}
-          key: yarn-${{ hashFiles('**/yarn.lock') }}
-          restore-keys: |
-            yarn-
       - name: Install dependencies
         run: yarn install --frozen-lockfile
-    # End of node module support
 
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
         with:
           version: nightly
 
-      - name: Run Forge build
-        run: |
-          forge --version
-          forge build --sizes
-        id: build
+      # needed to generate abi
+      - name: Build solidity
+        run: forge build
 
-      - name: Run Forge tests
+      - name: build
+        run: yarn build
+
+      - name: cp
+        run: mkdir dist2|cp -r dist dist2/dist
+      
+      - name: Deploy to dist branch
+        uses: JamesIves/github-pages-deploy-action@v4.3.3
+        with:
+          branch: dist # 部署的目标分支
+          folder: dist2 # 要部署的目录
+
+      - name: Create Release Tag
+        if: success()
         run: |
-          forge test -vvv
-        id: test
-        env:
-          FORK_URL: https://mainnet.infura.io/v3/${{ secrets.INFURA_API_KEY }}
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git tag -a v${{ github.sha }} -m "Automated release from commit ${{ github.sha }}"
+          git push origin v${{ github.sha }}
